@@ -157,6 +157,7 @@ void CFrame::CreateMenu()
 	emulationMenu->Append(IDM_RESET, GetMenuLabel(HK_RESET));
 	emulationMenu->AppendSeparator();
 	emulationMenu->Append(IDM_TOGGLE_FULLSCREEN, GetMenuLabel(HK_FULLSCREEN));
+	emulationMenu->Append( IDM_RESET_OVR_TRACKING, GetMenuLabel( HK_RESET_OVR_TRACKING ) );
 	emulationMenu->AppendSeparator();
 	emulationMenu->Append(IDM_RECORD, GetMenuLabel(HK_START_RECORDING));
 	emulationMenu->Append(IDM_PLAYRECORD, GetMenuLabel(HK_PLAY_RECORDING));
@@ -477,6 +478,8 @@ wxString CFrame::GetMenuLabel(int Id)
 		case HK_SAVE_FIRST_STATE: Label = _("Save Oldest State"); break;
 		case HK_UNDO_LOAD_STATE: Label = _("Undo Load State"); break;
 		case HK_UNDO_SAVE_STATE: Label = _("Undo Save State"); break;
+
+		case HK_RESET_OVR_TRACKING: Label = _( "Reset Oculus Rift Tracking" ); break;
 
 		default:
 			Label = wxString::Format(_("Undefined %i"), Id);
@@ -1539,6 +1542,11 @@ void CFrame::OnConnectWiimote(wxCommandEvent& event)
 void CFrame::OnToggleFullscreen(wxCommandEvent& WXUNUSED (event))
 {
 	DoFullscreen(!RendererIsFullscreen());
+}
+
+void CFrame::OnResetOVRTracking( wxCommandEvent& event )
+{
+	g_Config.bResetTracking = true;
 }
 
 void CFrame::OnToggleDualCore(wxCommandEvent& WXUNUSED (event))

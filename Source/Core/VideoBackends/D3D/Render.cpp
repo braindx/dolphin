@@ -1105,6 +1105,11 @@ void Renderer::SwapImpl(u32 xfbAddr, u32 fbWidth, u32 fbHeight,const EFBRectangl
 	{
 		ovrHmd_BeginFrame( HMD, 0 );
 	}
+	if ( g_ActiveConfig.bResetTracking )
+	{
+		ovrHmd_RecenterPose( HMD );
+		g_Config.bResetTracking = false;
+	}
 	VertexShaderManager::ResetView();
 	eyeRenderPose[eye] = ovrHmd_GetEyePose( HMD, (ovrEyeType)eye );
 	VertexShaderManager::TranslateView( EyeRenderDesc[eye].ViewAdjust.x, EyeRenderDesc[eye].ViewAdjust.z, EyeRenderDesc[eye].ViewAdjust.y );

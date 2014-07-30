@@ -110,6 +110,8 @@ static const struct
 	{ "UndoSaveState",       351 /* WXK_F12 */,   4 /* wxMOD_SHIFT */ },
 	{ "SaveStateFile",       0,                   0 /* wxMOD_NONE */ },
 	{ "LoadStateFile",       0,                   0 /* wxMOD_NONE */ },
+
+	{ "ResetOVRTracking",	 322 /* WXK_INSERT */,2 /* wxMOD_CONTROL */},
 };
 
 SConfig::SConfig()
