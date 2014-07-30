@@ -409,6 +409,8 @@ D3DTexture2D* &GetBackBuffer() { return backbuf; }
 unsigned int GetBackBufferWidth() { return xres; }
 unsigned int GetBackBufferHeight() { return yres; }
 
+IDXGISwapChain* &GetSwapChain() { return swapchain; }
+
 bool BGRATexturesSupported() { return bgra_textures_supported; }
 
 // Returns the maximum width/height of a texture. This value only depends upon the feature level in DX11

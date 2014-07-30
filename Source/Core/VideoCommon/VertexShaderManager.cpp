@@ -32,7 +32,7 @@ static Matrix44 s_viewportCorrection;
 static Matrix33 s_viewRotationMatrix;
 static Matrix33 s_viewInvRotationMatrix;
 static float s_fViewTranslationVector[3];
-static float s_fViewRotation[2];
+static float s_fViewRotation[3];
 
 VertexShaderConstants VertexShaderManager::constants;
 bool VertexShaderManager::dirty;
@@ -503,7 +503,7 @@ void VertexShaderManager::SetConstants()
 
 		PRIM_LOG("Projection: %f %f %f %f %f %f\n", rawProjection[0], rawProjection[1], rawProjection[2], rawProjection[3], rawProjection[4], rawProjection[5]);
 
-		if ((g_ActiveConfig.bFreeLook || g_ActiveConfig.bAnaglyphStereo ) && xfmem.projection.type == GX_PERSPECTIVE)
+		if ((g_ActiveConfig.bFreeLook || g_ActiveConfig.bAnaglyphStereo || true ) && xfmem.projection.type == GX_PERSPECTIVE)
 		{
 			Matrix44 mtxA;
 			Matrix44 mtxB;
@@ -672,21 +672,28 @@ void VertexShaderManager::TranslateView(float x, float y, float z)
 	bProjectionChanged = true;
 }
 
-void VertexShaderManager::RotateView(float x, float y)
+void VertexShaderManager::RotateView(float x, float y, float z)
 {
 	s_fViewRotation[0] += x;
 	s_fViewRotation[1] += y;
+	s_fViewRotation[2] += z;
 
 	Matrix33 mx;
 	Matrix33 my;
+	Matrix33 mz;
+	Matrix33 temp;
+	Matrix33::RotateZ(mz, s_fViewRotation[2] );
 	Matrix33::RotateX(mx, s_fViewRotation[1]);
 	Matrix33::RotateY(my, s_fViewRotation[0]);
-	Matrix33::Multiply(mx, my, s_viewRotationMatrix);
+	Matrix33::Multiply(mx, my, temp);
+	Matrix33::Multiply(mz, temp, s_viewRotationMatrix);
 
 	// reverse rotation
+	Matrix33::RotateZ( mz, -s_fViewRotation[2] );
 	Matrix33::RotateX(mx, -s_fViewRotation[1]);
 	Matrix33::RotateY(my, -s_fViewRotation[0]);
-	Matrix33::Multiply(my, mx, s_viewInvRotationMatrix);
+	Matrix33::Multiply(my, mz, temp);
+	Matrix33::Multiply( temp, mx, s_viewInvRotationMatrix );
 
 	bProjectionChanged = true;
 }
@@ -696,7 +703,7 @@ void VertexShaderManager::ResetView()
 	memset(s_fViewTranslationVector, 0, sizeof(s_fViewTranslationVector));
 	Matrix33::LoadIdentity(s_viewRotationMatrix);
 	Matrix33::LoadIdentity(s_viewInvRotationMatrix);
-	s_fViewRotation[0] = s_fViewRotation[1] = 0.0f;
+	s_fViewRotation[0] = s_fViewRotation[1] = 0.0f; s_fViewRotation[2] = 0.0f;
 
 	bProjectionChanged = true;
 }

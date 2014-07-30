@@ -35,6 +35,15 @@
 #include "VideoCommon/VertexShaderManager.h"
 #include "VideoCommon/VideoConfig.h"
 
+#include "OVR_CAPI.h"
+#define OVR_D3D_VERSION 11
+#include "OVR_CAPI_D3D.h"
+#include "Kernel/OVR_Math.h"
+
+ovrEyeRenderDesc EyeRenderDesc[2];
+ovrHmd HMD;
+ovrD3D11Texture EyeTextures[2];
+
 namespace DX11
 {
 
@@ -53,6 +62,8 @@ ID3D11RasterizerState* resetraststate = nullptr;
 
 static ID3D11Texture2D* s_screenshot_texture = nullptr;
 
+D3DTexture2D* LeftEyeRT;
+D3DTexture2D* RightEyeRT;
 
 // GX pipeline state
 struct
@@ -179,6 +190,19 @@ void CreateScreenshotTexture(const TargetRectangle& rc)
 
 Renderer::Renderer(void *&window_handle)
 {
+	ovr_Initialize();
+	HMD = ovrHmd_Create( 0 );
+	if ( !HMD )
+	{
+		MessageBoxA( NULL, "Oculus Rift not detected.", "", MB_OK );
+		ERROR_LOG( VIDEO, "Oculus Rift not detected." );
+	}
+	if ( HMD->ProductName[0] == '\0' )
+	{
+		MessageBoxA( NULL, "Rift detected, display not enabled.", "", MB_OK );
+		ERROR_LOG( VIDEO, "Rift detected, display not enabled." );
+	}
+
 	int x, y, w_temp, h_temp;
 
 	Host_GetRenderWindowSize(x, y, w_temp, h_temp);
@@ -198,8 +222,51 @@ Renderer::Renderer(void *&window_handle)
 	s_last_fullscreen_mode = g_ActiveConfig.bFullscreen;
 	CalculateTargetSize(s_backbuffer_width, s_backbuffer_height);
 
-	SetupDeviceObjects();
+	SetupDeviceObjects();	
 
+	ovrHmd_AttachToWindow( HMD, window_handle, NULL, NULL );
+
+	ovrD3D11Config d3d11cfg;
+	d3d11cfg.D3D11.Header.API = ovrRenderAPI_D3D11;
+	d3d11cfg.D3D11.Header.RTSize.w = D3D::GetBackBufferWidth();
+	d3d11cfg.D3D11.Header.RTSize.h = D3D::GetBackBufferHeight();
+	d3d11cfg.D3D11.Header.Multisample = D3D::GetAAMode( g_ActiveConfig.iMultisampleMode ).Count;
+	d3d11cfg.D3D11.pDevice = D3D::device;
+	d3d11cfg.D3D11.pDeviceContext = D3D::context;
+	d3d11cfg.D3D11.pBackBufferRT = D3D::GetBackBuffer()->GetRTV();
+	d3d11cfg.D3D11.pSwapChain = D3D::GetSwapChain();
+
+	ovrFovPort eyeFov[2] = { HMD->DefaultEyeFov[0], HMD->DefaultEyeFov[1] } ;
+
+	if ( !ovrHmd_ConfigureRendering( HMD, &d3d11cfg.Config,
+		ovrDistortionCap_Chromatic | ovrDistortionCap_Vignette |
+		/*ovrDistortionCap_TimeWarp |*/ ovrDistortionCap_Overdrive,
+		eyeFov, EyeRenderDesc ) )
+	{
+		ERROR_LOG( VIDEO, "Failed to configure OVR rendering!" );
+	}
+
+	ovrHmd_SetEnabledCaps( HMD, ovrHmdCap_LowPersistence | ovrHmdCap_DynamicPrediction );
+	ovrHmd_ConfigureTracking( HMD, ovrTrackingCap_Orientation |
+		ovrTrackingCap_MagYawCorrection |
+		ovrTrackingCap_Position, 0 );
+
+	ovrSizei recommendedLeftEyeRTSize = ovrHmd_GetFovTextureSize( HMD, ovrEye_Left, HMD->DefaultEyeFov[0], 1.0f );
+	ovrSizei recommendedRightEyeRTSize = ovrHmd_GetFovTextureSize( HMD, ovrEye_Right, HMD->DefaultEyeFov[1], 1.0f );
+	LeftEyeRT = D3DTexture2D::Create( recommendedLeftEyeRTSize.w, recommendedLeftEyeRTSize.h, (D3D11_BIND_FLAG)( D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET ), D3D11_USAGE_DEFAULT, DXGI_FORMAT_R8G8B8A8_UNORM );
+	RightEyeRT = D3DTexture2D::Create( recommendedRightEyeRTSize.w, recommendedRightEyeRTSize.h, (D3D11_BIND_FLAG)( D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET ), D3D11_USAGE_DEFAULT, DXGI_FORMAT_R8G8B8A8_UNORM );
+	EyeTextures[0].D3D11.Header.API = ovrRenderAPI_D3D11;
+	EyeTextures[0].D3D11.Header.TextureSize = recommendedLeftEyeRTSize;
+	EyeTextures[0].D3D11.Header.RenderViewport.Pos.x = 0;
+	EyeTextures[0].D3D11.Header.RenderViewport.Pos.y = 0;
+	EyeTextures[0].D3D11.Header.RenderViewport.Size = EyeTextures[0].D3D11.Header.TextureSize;
+	EyeTextures[0].D3D11.pTexture = LeftEyeRT->GetTex();
+	EyeTextures[0].D3D11.pSRView = LeftEyeRT->GetSRV();
+	EyeTextures[1] = EyeTextures[0];
+	EyeTextures[1].D3D11.Header.TextureSize = recommendedRightEyeRTSize;
+	EyeTextures[1].D3D11.Header.RenderViewport.Size = EyeTextures[1].D3D11.Header.TextureSize;
+	EyeTextures[1].D3D11.pTexture = RightEyeRT->GetTex();
+	EyeTextures[1].D3D11.pSRView = RightEyeRT->GetSRV();
 
 	// Setup GX pipeline state
 	memset(&gx_state.blenddc, 0, sizeof(gx_state.blenddc));
@@ -243,15 +310,19 @@ Renderer::Renderer(void *&window_handle)
 	D3D11_VIEWPORT vp = CD3D11_VIEWPORT(0.f, 0.f, (float)s_target_width, (float)s_target_height);
 	D3D::context->RSSetViewports(1, &vp);
 	D3D::context->OMSetRenderTargets(1, &FramebufferManager::GetEFBColorTexture()->GetRTV(), FramebufferManager::GetEFBDepthTexture()->GetDSV());
+	ovrHmd_BeginFrame( HMD, 0 );
+	ovrHmd_GetTrackingState( HMD, 0 );
 	D3D::BeginFrame();
 }
 
 Renderer::~Renderer()
-{
+{	
 	TeardownDeviceObjects();
 	D3D::EndFrame();
 	D3D::Present();
+	ovrHmd_Destroy( HMD );
 	D3D::Close();
+	ovr_Shutdown();
 }
 
 void Renderer::RenderText(const std::string& text, int left, int top, u32 color)
@@ -754,12 +825,17 @@ void Renderer::SwapImpl(u32 xfbAddr, u32 fbWidth, u32 fbHeight,const EFBRectangl
 	if (Height < 0) Height = 0;
 	if (Width > (s_backbuffer_width - X)) Width = s_backbuffer_width - X;
 	if (Height > (s_backbuffer_height - Y)) Height = s_backbuffer_height - Y;
-	D3D11_VIEWPORT vp = CD3D11_VIEWPORT((float)X, (float)Y, (float)Width, (float)Height);
+	//D3D11_VIEWPORT vp = CD3D11_VIEWPORT((float)X, (float)Y, (float)Width, (float)Height);
+	static int eye = 0;	
+	float aspectRatio = (float)Width / Height / ( (float)EyeTextures[eye].D3D11.Header.RenderViewport.Size.w / EyeTextures[eye].D3D11.Header.RenderViewport.Size.h );
+	int newHeight = EyeTextures[eye].D3D11.Header.RenderViewport.Size.h / aspectRatio;
+	D3D11_VIEWPORT vp = CD3D11_VIEWPORT( EyeTextures[eye].D3D11.Header.RenderViewport.Pos.x, EyeTextures[eye].D3D11.Header.RenderViewport.Pos.y + EyeTextures[eye].D3D11.Header.RenderViewport.Size.h / 2 - newHeight / 2, EyeTextures[eye].D3D11.Header.RenderViewport.Size.w, newHeight );
 	D3D::context->RSSetViewports(1, &vp);
-	D3D::context->OMSetRenderTargets(1, &D3D::GetBackBuffer()->GetRTV(), nullptr);
+	ID3D11RenderTargetView** rtv = eye == 0 ? &LeftEyeRT->GetRTV() : &RightEyeRT->GetRTV();
+	D3D::context->OMSetRenderTargets(1, rtv, nullptr);
 
 	float ClearColor[4] = { 0.f, 0.f, 0.f, 1.f };
-	D3D::context->ClearRenderTargetView(D3D::GetBackBuffer()->GetRTV(), ClearColor);
+	D3D::context->ClearRenderTargetView( *rtv, ClearColor );
 
 	// activate linear filtering for the buffer copies
 	D3D::SetLinearCopySampler();
@@ -968,7 +1044,14 @@ void Renderer::SwapImpl(u32 xfbAddr, u32 fbWidth, u32 fbHeight,const EFBRectangl
 	}
 
 	// Flip/present backbuffer to frontbuffer here
-	D3D::Present();
+	eye = eye == 0 ? 1 : 0;
+	ovrPosef eyeRenderPose[2];	
+	if ( eye == 0 )
+	{
+		ovrHmd_EndFrame( HMD, eyeRenderPose, &EyeTextures[0].Texture );
+		ovrHmd_DismissHSWDisplay( HMD );
+	}
+	//D3D::Present();	
 
 	// Resize the back buffers NOW to avoid flickering
 	if (xfbchanged ||
@@ -1018,6 +1101,19 @@ void Renderer::SwapImpl(u32 xfbAddr, u32 fbWidth, u32 fbHeight,const EFBRectangl
 
 	// begin next frame
 	RestoreAPIState();
+	if ( eye == 0 )
+	{
+		ovrHmd_BeginFrame( HMD, 0 );
+	}
+	VertexShaderManager::ResetView();
+	eyeRenderPose[eye] = ovrHmd_GetEyePose( HMD, (ovrEyeType)eye );
+	VertexShaderManager::TranslateView( EyeRenderDesc[eye].ViewAdjust.x, EyeRenderDesc[eye].ViewAdjust.z, EyeRenderDesc[eye].ViewAdjust.y );
+	VertexShaderManager::TranslateView( -eyeRenderPose[eye].Position.x, -eyeRenderPose[eye].Position.z, -eyeRenderPose[eye].Position.y );
+	float pitch, yaw, roll;
+	OVR::Quatf eyeOrientation = OVR::Quatf( eyeRenderPose[eye].Orientation );
+	eyeOrientation.GetEulerAngles<OVR::Axis_Y, OVR::Axis_X, OVR::Axis_Z>( &yaw, &pitch, &roll );
+	VertexShaderManager::RotateView( -yaw, -pitch, -roll );
+	ovrHmd_GetTrackingState( HMD, 0 );
 	D3D::BeginFrame();
 	D3D::context->OMSetRenderTargets(1, &FramebufferManager::GetEFBColorTexture()->GetRTV(), FramebufferManager::GetEFBDepthTexture()->GetDSV());
 	SetViewport();

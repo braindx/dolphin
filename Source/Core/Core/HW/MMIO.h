@@ -50,10 +50,10 @@ inline bool IsMMIOAddress(u32 address)
 // The block ID can easily be computed by simply checking bit 24 (CC vs. CD).
 inline u32 UniqueID(u32 address)
 {
-	_dbg_assert_msg_(MEMMAP, ((address & 0xFFFF0000) == 0xCC000000) ||
+	/*_dbg_assert_msg_(MEMMAP, ((address & 0xFFFF0000) == 0xCC000000) ||
 	                         ((address & 0xFFFF0000) == 0xCD000000) ||
 	                         ((address & 0xFFFF0000) == 0xCD800000),
-	                 "Trying to get the ID of a non-existing MMIO address.");
+	                 "Trying to get the ID of a non-existing MMIO address.");*/
 
 	return (((address >> 24) & 1) << 16) | (address & 0xFFFF);
 }

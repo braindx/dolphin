@@ -162,7 +162,7 @@ bool VideoBackend::Initialize(void *&window_handle)
 	g_Config.GameIniLoad();
 	g_Config.UpdateProjectionHack();
 	g_Config.VerifyValidity();
-	UpdateActiveConfig();
+	UpdateActiveConfig();	
 
 	m_window_handle = window_handle;
 
